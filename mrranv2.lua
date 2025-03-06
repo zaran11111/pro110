@@ -191,7 +191,24 @@ local function pressMouseButton1()
     game:GetService("VirtualInputManager"):SendMouseButtonEvent(0, 0, 0, false, game, 1)
 end
 
--- Update the teleport function to work with Parts instead of Models
+-- Replace pressMouseButton1 function with proper shooting code
+local function shootBall(power, direction)
+    -- Use the shooting remote with parameters
+    local args = {
+        [1] = power or 64.36308398842812, -- Default power value from the provided code
+        [4] = direction or Vector3.new(-0.666259765625, -0.2594583034515381, 0.6991274952888489) -- Default direction
+    }
+    
+    game:GetService("ReplicatedStorage"):WaitForChild("Packages"):WaitForChild("Knit")
+        :WaitForChild("Services"):WaitForChild("BallService")
+        :WaitForChild("RE"):WaitForChild("Shoot"):FireServer(unpack(args))
+end
+
+-- Add global variables for shot customization
+getgenv().shotPower = 64.36308398842812
+getgenv().shotAngle = {x = -0.666259765625, y = -0.2594583034515381, z = 0.6991274952888489}
+
+-- Update the teleport function to use the new shooting method
 local TeleportToggle = MainTab:CreateToggle({
    Name = "วาร์ปไปหาลูกฟุตบอลอัตโนมัติ",
    CurrentValue = false,
@@ -227,22 +244,33 @@ local TeleportToggle = MainTab:CreateToggle({
                      local goalCFrame = selectedGoal.CFrame
                      local goalPosition = goalCFrame.Position
                      
-                     -- Calculate position in front of goal (10 studs away)
-                     -- Use the part's orientation to determine which way is "front"
+                     -- Calculate improved position in front of goal (optimal distance)
                      local frontDirection = goalCFrame.LookVector
                      
-                     -- Log details for debugging
-                     print("Goal found:", selectedGoal:GetFullName())
-                     print("Goal position:", goalPosition)
-                     print("Front direction:", frontDirection)
+                     -- Position closer to goal (reduced from 10 to 7 studs) for better accuracy
+                     -- Also slight offset in height for better aim
+                     local optimalPosition = goalPosition - frontDirection * 7 + Vector3.new(0, 1.5, 0)
                      
                      -- Teleport to position in front of goal, facing the goal
-                     humanoidRootPart.CFrame = CFrame.new(goalPosition - frontDirection * 10, goalPosition)
+                     humanoidRootPart.CFrame = CFrame.new(optimalPosition, goalPosition)
                      
-                     -- Click to shoot if enabled
+                     -- Use a small delay for game to register the new position
+                     task.wait(0.3)
+                     
+                     -- Shoot if enabled, using our custom shooting function
                      if getgenv().autoShootEnabled then
-                        task.wait(0.2) -- Wait a moment after teleporting
-                        pressMouseButton1() -- Shoot
+                        -- Calculate direction vector from player to center of goal
+                        local shootDirection = (goalPosition - humanoidRootPart.Position).Unit
+                        
+                        -- Adjust direction slightly upwards for arc
+                        shootDirection = Vector3.new(
+                            shootDirection.X,
+                            shootDirection.Y + getgenv().heightAdjustment, 
+                            shootDirection.Z
+                        ).Unit
+                        
+                        -- Use the actual shooting code
+                        shootBall(getgenv().shotPower, shootDirection)
                      end
                   else
                      -- Debug info if goal not found
@@ -303,7 +331,7 @@ local GoalToggle = MainTab:CreateToggle({
 -- Replace the toggle with a dropdown for selecting which goal to use
 local GoalSelector = MainTab:CreateDropdown({
    Name = "เลือกประตูที่จะยิง",
-   Options = {"Away (น้ำเงิน)", "Home (ขาว)"},
+   Options = {"Away (น้ำเงิน)", " (ขาว)"},
    CurrentOption = "Away (น้ำเงิน)",
    Flag = "SelectedGoal",
    Callback = function(Option)
@@ -469,3 +497,88 @@ getgenv().aggressiveStealing = true
 getgenv().goalTeleportEnabled = true
 getgenv().useAwayGoal = true
 getgenv().autoShootEnabled = true
+
+-- Add a new section for shot customization
+local ShotSection = MainTab:CreateSection("ปรับแต่งการยิง")
+
+-- Add slider for shot power
+local PowerSlider = MainTab:CreateSlider({
+   Name = "พลังในการยิง",
+   Range = {50, 80},
+   Increment = 0.5,
+   Suffix = "power",
+   CurrentValue = 64.36,
+   Flag = "ShotPower",
+   Callback = function(Value)
+      getgenv().shotPower = Value
+   end,
+})
+
+-- Add height adjustment slider
+local HeightSlider = MainTab:CreateSlider({
+   Name = "ปรับความสูงของการยิง",
+   Range = {-0.5, 0.5},
+   Increment = 0.01,
+   Suffix = "height",
+   CurrentValue = 0.05,
+   Flag = "HeightAdjustment",
+   Callback = function(Value)
+      getgenv().heightAdjustment = Value
+   end,
+})
+
+-- Add button to test shot parameters
+local TestShotButton = MainTab:CreateButton({
+   Name = "ทดสอบการยิง",
+   Callback = function()
+      -- Create a direction vector using the current height adjustment
+      local shootDirection = Vector3.new(-0.666259765625, -0.2594583034515381 + getgenv().heightAdjustment, 0.6991274952888489).Unit
+      
+      shootBall(getgenv().shotPower, shootDirection)
+      Rayfield:Notify({
+         Title = "ทดสอบการยิง",
+         Content = "ยิงด้วยพลัง: " .. getgenv().shotPower .. ", ปรับความสูง: " .. getgenv().heightAdjustment,
+         Duration = 3,
+      })
+   end,
+})
+
+-- Add a button to save successful shot settings
+local SaveShotButton = MainTab:CreateButton({
+   Name = "บันทึกการตั้งค่าการยิงที่ประสบความสำเร็จ",
+   Callback = function()
+      -- Save the current settings to a file
+      local savedSettings = {
+         power = getgenv().shotPower,
+         heightAdjustment = getgenv().heightAdjustment
+      }
+      
+      -- Create a notification
+      Rayfield:Notify({
+         Title = "บันทึกการตั้งค่า",
+         Content = "บันทึกการตั้งค่าการยิงเรียบร้อยแล้ว",
+         Duration = 3,
+      })
+      
+      -- Here you could write to a file if needed
+      -- writefile("shotSettings.json", game:GetService("HttpService"):JSONEncode(savedSettings))
+   end,
+})
+
+-- Add delay before shooting slider
+local ShootDelaySlider = MainTab:CreateSlider({
+   Name = "ความล่าช้าก่อนยิง",
+   Range = {0.1, 1},
+   Increment = 0.05,
+   Suffix = "วินาที",
+   CurrentValue = 0.3,
+   Flag = "ShootDelay",
+   Callback = function(Value)
+      getgenv().shootDelay = Value
+   end,
+})
+
+-- Initialize the new global variables
+getgenv().shotPower = 64.36308398842812
+getgenv().heightAdjustment = 0.05
+getgenv().shootDelay = 0.3
